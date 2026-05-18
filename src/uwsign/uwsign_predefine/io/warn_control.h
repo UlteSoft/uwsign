@@ -36,31 +36,16 @@
 #ifdef UWSIGN
 UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::io
 {
+    /// @note Keep this file to warning switches that are actually used.
+    ///       When a warning category needs independent control, add the pair
+    ///       `show_<category>_warning` and `<category>_warning_fatal` here,
+    ///       then wire both variables into the warning emission site.
+
     /// @brief warning control
-    inline bool show_warning{true};              // [global]
-    inline bool show_sign_warning{true};         // [global]
-    inline bool show_input_warning{true};        // [global]
-    inline bool show_output_warning{true};       // [global]
-    inline bool show_format_warning{true};       // [global]
-    inline bool show_path_warning{true};         // [global]
-    inline bool show_file_warning{true};         // [global]
-    inline bool show_key_warning{true};          // [global]
-    inline bool show_certificate_warning{true};  // [global]
-    inline bool show_signature_warning{true};    // [global]
-    inline bool show_timestamp_warning{true};    // [global]
+    inline bool show_warning{true};  // [global]
 
     /// @brief warning fatal control
-    inline bool warning_fatal{};              // [global]
-    inline bool sign_warning_fatal{};         // [global]
-    inline bool input_warning_fatal{};        // [global]
-    inline bool output_warning_fatal{};       // [global]
-    inline bool format_warning_fatal{};       // [global]
-    inline bool path_warning_fatal{};         // [global]
-    inline bool file_warning_fatal{};         // [global]
-    inline bool key_warning_fatal{};          // [global]
-    inline bool certificate_warning_fatal{};  // [global]
-    inline bool signature_warning_fatal{};    // [global]
-    inline bool timestamp_warning_fatal{};    // [global]
+    inline bool warning_fatal{};  // [global]
 
 }  // namespace uwsign::uwsign::io
 #endif
