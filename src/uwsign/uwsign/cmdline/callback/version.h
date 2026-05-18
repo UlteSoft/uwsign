@@ -64,9 +64,11 @@
 
 UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::cmdline::params::details
 {
+
     template <typename Stm>
-    inline constexpr void logo_u8print_not_rst_impl(Stm&& stm) noexcept
+    inline constexpr void logo_u8print_not_rst_impl([[maybe_unused]] Stm && stm) noexcept
     {
+#if 0
         ::fast_io::io::perr(::std::forward<Stm>(stm),
                             ::fast_io::mnp::cond(::uwsign::uwsign::utils::ansies::put_color, UWSIGN_COLOR_U8_RST_ALL),
                             u8"\n",
@@ -84,6 +86,8 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::cmdline::params::details
                             u8"|\n",
                             ::fast_io::mnp::cond(::uwsign::uwsign::utils::ansies::put_color, UWSIGN_COLOR_U8_RGB(42, 92, 170)),
                             u8" ----------------------------------------- \n\n");
+
+#endif
     }
 
 #if defined(UWSIGN_MODULE)
