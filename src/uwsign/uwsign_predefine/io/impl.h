@@ -25,7 +25,6 @@
 #ifndef UWSIGN_MODULE
 # include "io_device.h"
 # include "output.h"
-# include "runtime_log.h"
 # include "warn_control.h"
 # include "verbose_control.h"
 # include "time.h"
