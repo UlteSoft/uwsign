@@ -45,7 +45,7 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::cmdline::params
 #endif
     inline constexpr ::uwsign::utils::cmdline::parameter sign_certificate{
         .name{u8"--certificate"},
-        .describe{u8"Set signing certificate."},
+        .describe{u8"Embed or verify with an X.509 certificate."},
         .usage{u8"<file>"},
         .alias{::uwsign::utils::cmdline::kns_u8_str_scatter_t{details::sign_certificate_alias.data(), details::sign_certificate_alias.size()}},
         .handle{::std::addressof(details::required_value_callback)},

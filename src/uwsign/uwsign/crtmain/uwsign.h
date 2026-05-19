@@ -31,8 +31,10 @@
 # include <uwsign/utils/debug/impl.h>
 # include <uwsign/uwsign_predefine/io/impl.h>
 # include <uwsign/uwsign_predefine/utils/ansies/impl.h>
+# include <uwsign/utils/container/impl.h>
 # include <uwsign/uwsign/cmdline/impl.h>
 # include <uwsign/uwsign/crtmain/global/impl.h>
+# include <uwsign/uwsign/sign/impl.h>
 // callback
 # include <uwsign/uwsign/cmdline/callback/impl.h>
 #endif
@@ -59,7 +61,7 @@
 
 UWSIGN_MODULE_EXPORT namespace uwsign::uwsign
 {
-    enum class retval : int
+    enum class retval : unsigned
     {
         ok = 0,
         parameter_error = 1,
@@ -68,7 +70,7 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign
 
     namespace details
     {
-        inline void print_parameter_error(char8_t const* message) noexcept
+        inline void print_parameter_error(::uwsign::utils::container::u8string_view message) noexcept
         {
             ::fast_io::io::perr(::uwsign::uwsign::io::u8log_output,
                                 ::fast_io::mnp::cond(::uwsign::uwsign::utils::ansies::put_color, UWSIGN_COLOR_U8_RST_ALL_AND_SET_WHITE),
@@ -76,7 +78,7 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign
                                 ::fast_io::mnp::cond(::uwsign::uwsign::utils::ansies::put_color, UWSIGN_COLOR_U8_RED),
                                 u8"[error] ",
                                 ::fast_io::mnp::cond(::uwsign::uwsign::utils::ansies::put_color, UWSIGN_COLOR_U8_WHITE),
-                                ::fast_io::mnp::os_c_str(message),
+                                message,
                                 ::fast_io::mnp::cond(::uwsign::uwsign::utils::ansies::put_color, UWSIGN_COLOR_U8_RST_ALL),
                                 u8"\n\n");
         }
@@ -111,22 +113,7 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign
             }
         }
 
-        ::fast_io::io::perr(::uwsign::uwsign::io::u8log_output,
-                            ::fast_io::mnp::cond(::uwsign::uwsign::utils::ansies::put_color, UWSIGN_COLOR_U8_RST_ALL_AND_SET_WHITE),
-                            u8"uwsign: ",
-                            ::fast_io::mnp::cond(::uwsign::uwsign::utils::ansies::put_color, UWSIGN_COLOR_U8_RED),
-                            u8"[error] ",
-                            ::fast_io::mnp::cond(::uwsign::uwsign::utils::ansies::put_color, UWSIGN_COLOR_U8_WHITE),
-                            u8"signing command handling has not been implemented yet.\n",
-                            ::fast_io::mnp::cond(::uwsign::uwsign::utils::ansies::put_color, UWSIGN_COLOR_U8_RST_ALL_AND_SET_WHITE),
-                            u8"uwsign: ",
-                            ::fast_io::mnp::cond(::uwsign::uwsign::utils::ansies::put_color, UWSIGN_COLOR_U8_LT_GREEN),
-                            u8"[info]  ",
-                            ::fast_io::mnp::cond(::uwsign::uwsign::utils::ansies::put_color, UWSIGN_COLOR_U8_WHITE),
-                            u8"Use --help to see the currently available options.",
-                            ::fast_io::mnp::cond(::uwsign::uwsign::utils::ansies::put_color, UWSIGN_COLOR_U8_RST_ALL),
-                            u8"\n");
-        return static_cast<int>(retval::unimplemented);
+        return static_cast<int>(::uwsign::uwsign::sign::execute_from_cmdline());
     }
 
 #if !((defined(_WIN32) && !defined(__CYGWIN__)) && !defined(_WIN32_WINDOWS))  // NOT WINNT

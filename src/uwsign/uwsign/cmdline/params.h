@@ -38,10 +38,22 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::cmdline
             ::std::addressof(::uwsign::uwsign::cmdline::params::help),
 
             // sign
+            ::std::addressof(::uwsign::uwsign::cmdline::params::sign),
+            ::std::addressof(::uwsign::uwsign::cmdline::params::verify),
             ::std::addressof(::uwsign::uwsign::cmdline::params::sign_input),
             ::std::addressof(::uwsign::uwsign::cmdline::params::sign_output),
+            ::std::addressof(::uwsign::uwsign::cmdline::params::sign_wasm_output),
             ::std::addressof(::uwsign::uwsign::cmdline::params::sign_key),
             ::std::addressof(::uwsign::uwsign::cmdline::params::sign_certificate),
+            ::std::addressof(::uwsign::uwsign::cmdline::params::sign_certificate_chain),
+            ::std::addressof(::uwsign::uwsign::cmdline::params::sign_bundle),
+            ::std::addressof(::uwsign::uwsign::cmdline::params::sign_bundle_format),
+            ::std::addressof(::uwsign::uwsign::cmdline::params::sign_signature),
+            ::std::addressof(::uwsign::uwsign::cmdline::params::sign_output_signature),
+            ::std::addressof(::uwsign::uwsign::cmdline::params::sign_output_certificate),
+            ::std::addressof(::uwsign::uwsign::cmdline::params::sign_output_certificate_chain),
+            ::std::addressof(::uwsign::uwsign::cmdline::params::sign_replace),
+            ::std::addressof(::uwsign::uwsign::cmdline::params::sign_base64),
 
             // log
             ::std::addressof(::uwsign::uwsign::cmdline::params::log_verbose),

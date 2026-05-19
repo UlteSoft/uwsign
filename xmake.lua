@@ -210,6 +210,20 @@ target("uwsign")
 	-- third-parties/fast_io
 	add_includedirs("third-parties/fast_io/include")
 
+	if not is_plat("wasm-wasi", "wasm-wasip1", "wasm-wasip2", "wasm-wasip3", "wasm-wasi-threads", "wasm-wasip1-threads", "wasm-wasip2-threads", "wasm-wasip3-threads", "wasm-emscripten", "none") then
+		for _, openssl_prefix in ipairs({"/opt/homebrew/opt/openssl@3", "/usr/local/opt/openssl@3"}) do
+			local openssl_include = path.join(openssl_prefix, "include")
+			local openssl_lib = path.join(openssl_prefix, "lib")
+			if os.isdir(openssl_include) then
+				add_includedirs(openssl_include, { system = true })
+			end
+			if os.isdir(openssl_lib) then
+				add_linkdirs(openssl_lib)
+			end
+		end
+		add_links("ssl", "crypto")
+	end
+
 	if enable_cxx_module then
 		add_files("third-parties/fast_io/share/fast_io/fast_io.cppm", { public = is_debug_mode })
 		add_files("third-parties/fast_io/share/fast_io/fast_io_crypto.cppm", { public = is_debug_mode })
@@ -224,59 +238,7 @@ target("uwsign")
 	add_headerfiles("src/**.h")
 
 	if enable_cxx_module then
-		add_files("src/uwsign/uwsign_predefine/io/io_device.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign_predefine/io/output.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign_predefine/io/runtime_log.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign_predefine/io/warn_control.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign_predefine/io/verbose_control.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign_predefine/io/time.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign_predefine/io/impl.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign_predefine/utils/ansies/no_color.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign_predefine/utils/ansies/impl.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/intrinsics/prefetch.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/intrinsics/arm_sve.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/intrinsics/impl.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/hash/xxh3.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/hash/impl.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/container/allocator.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/container/wrapper.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/container/string_concat.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/container/impl.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/ansies/cursor.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/ansies/rgb.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/ansies/win32_text_attr.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/ansies/impl.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/version/version.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/version/impl.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/debug/bug_report.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/debug/timer.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/debug/impl.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/cmdline/shortest_path.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/cmdline/handle.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/cmdline/print_usage.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/utils/cmdline/impl.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/cmdline/params/version.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/cmdline/params/help.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/cmdline/params/value.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/cmdline/params/sign_input.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/cmdline/params/sign_output.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/cmdline/params/sign_key.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/cmdline/params/sign_certificate.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/cmdline/params/log_verbose.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/cmdline/params/impl.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/cmdline/params.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/cmdline/parser.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/cmdline/impl.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/cmdline/callback/sign_value.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/cmdline/callback/version.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/cmdline/callback/help.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/cmdline/callback/impl.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/crtmain/global/tzset.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/crtmain/global/ansi_win32.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/crtmain/global/consolecp_win32.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/crtmain/global/impl.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/crtmain/uwsign.cppm", { public = is_debug_mode })
-		add_files("src/uwsign/uwsign/crtmain/impl.cppm", { public = is_debug_mode })
+		add_files("src/uwsign/**.cppm", { public = is_debug_mode })
 		-- uwsign main
 		add_files("src/uwsign/uwsign/main.module.cpp")
 	else
@@ -284,4 +246,13 @@ target("uwsign")
 		add_files("src/uwsign/uwsign/main.default.cpp")
 	end
 
+target_end()
+
+target("uwsign_wasm_signature_section_test")
+	set_kind("binary")
+	def_build({skip_static_libcxx = true})
+
+	add_includedirs("third-parties/fast_io/include")
+	add_includedirs("src/")
+	add_files("test/wasm_signature_section_test.cc")
 target_end()

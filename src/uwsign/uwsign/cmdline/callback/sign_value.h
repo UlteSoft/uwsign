@@ -52,7 +52,7 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::cmdline::params::details
             if(auto const currp1_cstr{*currp1}; currp1_cstr != nullptr)
             {
                 auto const currp1_str{::uwsign::utils::container::u8cstring_view{::fast_io::mnp::os_c_str(currp1_cstr)}};
-                if(!currp1_str.empty() && currp1_str.front_unchecked() != u8'-')
+                if(!currp1_str.empty() && (currp1_str.front_unchecked() != u8'-' || currp1_str == u8"-"))
                 {
                     pr.emplace_back_unchecked(currp1_str, nullptr, ::uwsign::utils::cmdline::parameter_parsing_results_type::occupied_arg);
                     argv_curr = currp1 + 1u;

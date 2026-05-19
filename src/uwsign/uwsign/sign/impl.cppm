@@ -5,8 +5,8 @@
  *************************************************************/
 
 /**
- * @file        uwsign.cppm
- * @brief       uwsign C++ startup entry point module
+ * @file        impl.cppm
+ * @brief       uwsign signing implementation module
  * @author      MacroModel
  * @version     v1.0.0.0
  * @copyright   APL-2.0 License
@@ -16,23 +16,24 @@ module;
 
 #include <cstddef>
 #include <cstdint>
-#include <bit>
-#include <limits>
+#include <cstring>
+#include <exception>
+#include <memory>
 #include <utility>
-// macro
 #include <uwsign/uwsign_predefine/utils/ansies/uwsign_color_push_macro.h>
 #include <uwsign/utils/macro/push_macros.h>
 
-export module uwsign.uwsign.crtmain:uwsign;
+export module uwsign.uwsign.sign;
+export import :payload;
 
 import fast_io;
-import uwsign.utils.debug;
+import uwsign.utils.container;
+import uwsign.utils.cmdline;
 import uwsign.uwsign_predefine.io;
 import uwsign.uwsign_predefine.utils.ansies;
 import uwsign.uwsign.cmdline;
-import uwsign.uwsign.cmdline.callback;
-import uwsign.uwsign.crtmain.global;
-import uwsign.uwsign.sign;
+import uwsign.uwsign.crypto;
+import uwsign.uwsign.wasm;
 
 #ifndef UWSIGN_MODULE
 # define UWSIGN_MODULE
@@ -41,4 +42,4 @@ import uwsign.uwsign.sign;
 # define UWSIGN_MODULE_EXPORT export
 #endif
 
-#include "uwsign.h"
+#include "impl.h"

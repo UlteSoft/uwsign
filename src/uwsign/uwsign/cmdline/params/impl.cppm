@@ -18,10 +18,22 @@ export module uwsign.uwsign.cmdline.params;
 export import :version;
 export import :help;
 export import :value;
+export import :sign;
+export import :verify;
 export import :sign_input;
 export import :sign_output;
+export import :sign_wasm_output;
 export import :sign_key;
 export import :sign_certificate;
+export import :sign_certificate_chain;
+export import :sign_bundle;
+export import :sign_bundle_format;
+export import :sign_signature;
+export import :sign_output_signature;
+export import :sign_output_certificate;
+export import :sign_output_certificate_chain;
+export import :sign_replace;
+export import :sign_base64;
 export import :log_verbose;
 
 #ifndef UWSIGN_MODULE

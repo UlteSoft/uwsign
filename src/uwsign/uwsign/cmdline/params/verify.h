@@ -5,8 +5,8 @@
  *************************************************************/
 
 /**
- * @file        sign_key.h
- * @brief       uwsign sign key command line parameter
+ * @file        verify.h
+ * @brief       uwsign verify command line parameter
  * @author      MacroModel
  * @version     v1.0.0.0
  * @copyright   APL-2.0 License
@@ -24,7 +24,6 @@
 # include <fast_io.h>
 # include <uwsign/utils/container/impl.h>
 # include <uwsign/utils/cmdline/impl.h>
-# include "value.h"
 #endif
 
 #ifndef UWSIGN_MODULE_EXPORT
@@ -35,22 +34,17 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::cmdline::params
 {
     namespace details
     {
-        inline bool sign_key_is_exist{};  // [global]
-        inline constexpr ::uwsign::utils::container::array<::uwsign::utils::container::u8string_view, 2uz> sign_key_alias{u8"-k", u8"--private-key"};
+        inline bool verify_is_exist{};  // [global]
     }
 
 #if defined(__clang__)
 # pragma clang diagnostic push
 # pragma clang diagnostic ignored "-Wbraced-scalar-init"
 #endif
-    inline constexpr ::uwsign::utils::cmdline::parameter sign_key{
-        .name{u8"--key"},
-        .describe{u8"Set private key for signing or public key for verification."},
-        .usage{u8"<file>"},
-        .alias{::uwsign::utils::cmdline::kns_u8_str_scatter_t{details::sign_key_alias.data(), details::sign_key_alias.size()}},
-        .handle{::std::addressof(details::required_value_callback)},
-        .pretreatment{::std::addressof(details::required_value_pretreatment)},
-        .is_exist{::std::addressof(details::sign_key_is_exist)},
+    inline constexpr ::uwsign::utils::cmdline::parameter verify{
+        .name{u8"--verify"},
+        .describe{u8"Verify wasm_uwsign signature sections."},
+        .is_exist{::std::addressof(details::verify_is_exist)},
         .cate{::uwsign::utils::cmdline::categorization::sign}};
 #if defined(__clang__)
 # pragma clang diagnostic pop

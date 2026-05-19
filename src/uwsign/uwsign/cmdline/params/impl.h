@@ -21,10 +21,22 @@
 // value
 # include "value.h"
 // sign
+# include "sign.h"
+# include "verify.h"
 # include "sign_input.h"
 # include "sign_output.h"
+# include "sign_wasm_output.h"
 # include "sign_key.h"
 # include "sign_certificate.h"
+# include "sign_certificate_chain.h"
+# include "sign_bundle.h"
+# include "sign_bundle_format.h"
+# include "sign_signature.h"
+# include "sign_output_signature.h"
+# include "sign_output_certificate.h"
+# include "sign_output_certificate_chain.h"
+# include "sign_replace.h"
+# include "sign_base64.h"
 // log
 # include "log_verbose.h"
 #endif

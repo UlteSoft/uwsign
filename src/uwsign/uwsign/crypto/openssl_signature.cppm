@@ -5,8 +5,8 @@
  *************************************************************/
 
 /**
- * @file        uwsign.cppm
- * @brief       uwsign C++ startup entry point module
+ * @file        openssl_signature.cppm
+ * @brief       OpenSSL signing helper module
  * @author      MacroModel
  * @version     v1.0.0.0
  * @copyright   APL-2.0 License
@@ -14,25 +14,27 @@
 
 module;
 
+// std
 #include <cstddef>
 #include <cstdint>
-#include <bit>
-#include <limits>
-#include <utility>
+#include <cstring>
+#include <memory>
 // macro
-#include <uwsign/uwsign_predefine/utils/ansies/uwsign_color_push_macro.h>
 #include <uwsign/utils/macro/push_macros.h>
+// platform
+#include <openssl/bio.h>
+#include <openssl/buffer.h>
+#include <openssl/err.h>
+#include <openssl/evp.h>
+#include <openssl/pem.h>
+#include <openssl/sha.h>
+#include <openssl/x509.h>
+#include <openssl/x509_vfy.h>
 
-export module uwsign.uwsign.crtmain:uwsign;
+export module uwsign.uwsign.crypto.openssl_signature;
 
 import fast_io;
-import uwsign.utils.debug;
-import uwsign.uwsign_predefine.io;
-import uwsign.uwsign_predefine.utils.ansies;
-import uwsign.uwsign.cmdline;
-import uwsign.uwsign.cmdline.callback;
-import uwsign.uwsign.crtmain.global;
-import uwsign.uwsign.sign;
+import uwsign.utils.container;
 
 #ifndef UWSIGN_MODULE
 # define UWSIGN_MODULE
@@ -41,4 +43,4 @@ import uwsign.uwsign.sign;
 # define UWSIGN_MODULE_EXPORT export
 #endif
 
-#include "uwsign.h"
+#include "openssl_signature.h"
