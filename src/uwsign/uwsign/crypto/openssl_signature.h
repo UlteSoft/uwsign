@@ -19,7 +19,9 @@
 # include <cstddef>
 # include <cstdint>
 # include <cstring>
+# include <limits>
 # include <memory>
+# include <utility>
 // macro
 # include <uwsign/utils/macro/push_macros.h>
 // platform
@@ -27,7 +29,9 @@
 # include <openssl/buffer.h>
 # include <openssl/err.h>
 # include <openssl/evp.h>
+# include <openssl/opensslv.h>
 # include <openssl/pem.h>
+# include <openssl/rsa.h>
 # include <openssl/sha.h>
 # include <openssl/x509.h>
 # include <openssl/x509_vfy.h>
@@ -160,7 +164,21 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::crypto
         inline bio_ptr make_mem_bio(::std::byte const* first, ::std::size_t size) noexcept
         {
             if(size == 0uz) [[unlikely]] { return bio_ptr{BIO_new_mem_buf("", 0)}; }
+            if(size > static_cast<::std::size_t>((::std::numeric_limits<int>::max)())) [[unlikely]] { return {}; }
             return bio_ptr{BIO_new_mem_buf(first, static_cast<int>(size))};
+        }
+
+        inline bool copy_mem_bio(BIO* bio, byte_vector& out) noexcept
+        {
+            out = {};
+
+            BUF_MEM* mem{};
+            BIO_get_mem_ptr(bio, ::std::addressof(mem));
+            if(mem == nullptr || mem->length == 0uz) [[unlikely]] { return false; }
+
+            out.resize(mem->length);
+            ::std::memcpy(out.data(), mem->data, mem->length);
+            return true;
         }
 
         inline evp_pkey_ptr read_private_key(::std::byte const* first, ::std::size_t size) noexcept
@@ -177,11 +195,33 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::crypto
             return evp_pkey_ptr{PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr)};
         }
 
+        inline evp_pkey_ptr read_public_key_der(::std::byte const* first, ::std::size_t size) noexcept
+        {
+            if(size > static_cast<::std::size_t>((::std::numeric_limits<long>::max)())) [[unlikely]] { return {}; }
+
+            auto curr{reinterpret_cast<unsigned char const*>(first)};
+            auto const last{curr + size};
+            auto key{evp_pkey_ptr{d2i_PUBKEY(nullptr, ::std::addressof(curr), static_cast<long>(size))}};
+            if(!key || curr != last) [[unlikely]] { return {}; }
+            return key;
+        }
+
         inline x509_ptr read_certificate(::std::byte const* first, ::std::size_t size) noexcept
         {
             auto bio{make_mem_bio(first, size)};
             if(!bio) [[unlikely]] { return {}; }
             return x509_ptr{PEM_read_bio_X509(bio.get(), nullptr, nullptr, nullptr)};
+        }
+
+        inline x509_ptr read_certificate_der(::std::byte const* first, ::std::size_t size) noexcept
+        {
+            if(size > static_cast<::std::size_t>((::std::numeric_limits<long>::max)())) [[unlikely]] { return {}; }
+
+            auto curr{reinterpret_cast<unsigned char const*>(first)};
+            auto const last{curr + size};
+            auto cert{x509_ptr{d2i_X509(nullptr, ::std::addressof(curr), static_cast<long>(size))}};
+            if(!cert || curr != last) [[unlikely]] { return {}; }
+            return cert;
         }
 
         inline x509_stack_ptr read_certificate_chain(::std::byte const* first, ::std::size_t size) noexcept
@@ -200,6 +240,7 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::crypto
                 static_cast<void>(cert.release());
             }
 
+            if(sk_X509_num(chain.get()) == 0) [[unlikely]] { return {}; }
             return chain;
         }
 
@@ -210,6 +251,28 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::crypto
             return evp_pkey_ptr{X509_get_pubkey(cert.get())};
         }
 
+        [[nodiscard]] inline bool same_public_key(EVP_PKEY* lhs, EVP_PKEY* rhs) noexcept
+        {
+            if(lhs == nullptr || rhs == nullptr) [[unlikely]] { return false; }
+#if defined(OPENSSL_VERSION_MAJOR) && OPENSSL_VERSION_MAJOR >= 3
+            return EVP_PKEY_eq(lhs, rhs) == 1;
+#else
+            return EVP_PKEY_cmp(lhs, rhs) == 1;
+#endif
+        }
+
+        inline bool push_up_ref_certificate(STACK_OF(X509) * stack, X509* cert) noexcept
+        {
+            if(stack == nullptr || cert == nullptr) [[unlikely]] { return false; }
+            if(X509_up_ref(cert) != 1) [[unlikely]] { return false; }
+            if(sk_X509_push(stack, cert) == 0) [[unlikely]]
+            {
+                X509_free(cert);
+                return false;
+            }
+            return true;
+        }
+
         inline bool verify_certificate_chain(X509* leaf, STACK_OF(X509)* chain) noexcept
         {
             if(leaf == nullptr || chain == nullptr || sk_X509_num(chain) == 0) [[unlikely]] { return false; }
@@ -218,25 +281,29 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::crypto
             if(!store) [[unlikely]] { return false; }
 
             auto const cert_count{sk_X509_num(chain)};
-            for(int i{}; i != cert_count; ++i)
+            auto const trust_anchor{sk_X509_value(chain, cert_count - 1)};
+            if(trust_anchor == nullptr) [[unlikely]] { return false; }
+            if(X509_STORE_add_cert(store.get(), trust_anchor) != 1) [[unlikely]]
+            {
+                auto const err{ERR_peek_last_error()};
+                if(ERR_GET_REASON(err) != X509_R_CERT_ALREADY_IN_HASH_TABLE) { return false; }
+                ERR_clear_error();
+            }
+
+            auto untrusted{x509_stack_ptr{sk_X509_new_null()}};
+            if(!untrusted) [[unlikely]] { return false; }
+            for(int i{}; i + 1 < cert_count; ++i)
             {
                 auto cert{sk_X509_value(chain, i)};
                 if(cert == nullptr) [[unlikely]] { return false; }
-                if(i + 1 == cert_count)
-                {
-                    if(X509_STORE_add_cert(store.get(), cert) != 1) [[unlikely]]
-                    {
-                        auto const err{ERR_peek_last_error()};
-                        if(ERR_GET_REASON(err) != X509_R_CERT_ALREADY_IN_HASH_TABLE) { return false; }
-                        ERR_clear_error();
-                    }
-                }
+                if(X509_cmp(leaf, cert) == 0) { continue; }
+                if(!push_up_ref_certificate(untrusted.get(), cert)) [[unlikely]] { return false; }
             }
 
             auto ctx{x509_store_ctx_ptr{X509_STORE_CTX_new()}};
             if(!ctx) [[unlikely]] { return false; }
 
-            if(X509_STORE_CTX_init(ctx.get(), store.get(), leaf, chain) != 1) [[unlikely]] { return false; }
+            if(X509_STORE_CTX_init(ctx.get(), store.get(), leaf, untrusted.get()) != 1) [[unlikely]] { return false; }
             return X509_verify_cert(ctx.get()) == 1;
         }
 
@@ -253,8 +320,33 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::crypto
 #if defined(EVP_PKEY_ED448)
                 case EVP_PKEY_ED448: return u8"ed448";
 #endif
-                default: return u8"evp-sha256";
+                default: return nullptr;
             }
+        }
+
+        [[nodiscard]] inline openssl_status validate_signature_key(EVP_PKEY const* key) noexcept
+        {
+            if(key == nullptr) [[unlikely]] { return {false, u8"OpenSSL key is null."}; }
+
+            switch(EVP_PKEY_get_base_id(key))
+            {
+                case EVP_PKEY_RSA:
+                case EVP_PKEY_RSA_PSS:
+                    if(EVP_PKEY_bits(key) < 2048) [[unlikely]] { return {false, u8"RSA signing keys must be at least 2048 bits."}; }
+                    break;
+                case EVP_PKEY_EC: break;
+#if defined(EVP_PKEY_ED25519)
+                case EVP_PKEY_ED25519: break;
+#endif
+#if defined(EVP_PKEY_ED448)
+                case EVP_PKEY_ED448: break;
+#endif
+                default: return {false, u8"unsupported OpenSSL signing key type."};
+            }
+
+            auto const security_bits{EVP_PKEY_get_security_bits(key)};
+            if(security_bits < 112) [[unlikely]] { return {false, u8"signing key strength is below 112 security bits."}; }
+            return {true, {}};
         }
 
         [[nodiscard]] inline constexpr EVP_MD const* md_for_key(EVP_PKEY const* key) noexcept
@@ -269,6 +361,65 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::crypto
 #endif
                 default: return EVP_sha256();
             }
+        }
+
+        inline openssl_status configure_signature_context(EVP_PKEY_CTX* pkey_ctx, EVP_PKEY const* key) noexcept
+        {
+            if(pkey_ctx == nullptr || key == nullptr) [[unlikely]] { return {false, u8"OpenSSL signature context is null."}; }
+
+            if(EVP_PKEY_get_base_id(key) == EVP_PKEY_RSA_PSS)
+            {
+                if(EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, RSA_PKCS1_PSS_PADDING) <= 0) [[unlikely]]
+                {
+                    return {false, u8"OpenSSL failed to set RSA-PSS padding."};
+                }
+                if(EVP_PKEY_CTX_set_rsa_mgf1_md(pkey_ctx, EVP_sha256()) <= 0) [[unlikely]]
+                {
+                    return {false, u8"OpenSSL failed to set RSA-PSS MGF1 digest."};
+                }
+                if(EVP_PKEY_CTX_set_rsa_pss_saltlen(pkey_ctx, RSA_PSS_SALTLEN_DIGEST) <= 0) [[unlikely]]
+                {
+                    return {false, u8"OpenSSL failed to set RSA-PSS salt length."};
+                }
+            }
+
+            return {true, {}};
+        }
+
+        inline openssl_status x509_to_der(X509* cert, byte_vector& der) noexcept
+        {
+            der = {};
+
+            auto const len{i2d_X509(cert, nullptr)};
+            if(len <= 0) [[unlikely]] { return {false, u8"OpenSSL failed to encode X.509 certificate DER."}; }
+
+            der.resize(static_cast<::std::size_t>(len));
+            auto curr{reinterpret_cast<unsigned char*>(der.data())};
+            if(i2d_X509(cert, ::std::addressof(curr)) != len) [[unlikely]]
+            {
+                der = {};
+                return {false, u8"OpenSSL failed to write X.509 certificate DER."};
+            }
+
+            return {true, {}};
+        }
+
+        inline openssl_status pkey_to_der(EVP_PKEY* key, byte_vector& der) noexcept
+        {
+            der = {};
+
+            auto const len{i2d_PUBKEY(key, nullptr)};
+            if(len <= 0) [[unlikely]] { return {false, u8"OpenSSL failed to encode public key DER."}; }
+
+            der.resize(static_cast<::std::size_t>(len));
+            auto curr{reinterpret_cast<unsigned char*>(der.data())};
+            if(i2d_PUBKEY(key, ::std::addressof(curr)) != len) [[unlikely]]
+            {
+                der = {};
+                return {false, u8"OpenSSL failed to write public key DER."};
+            }
+
+            return {true, {}};
         }
     }  // namespace details
 
@@ -287,11 +438,17 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::crypto
         auto ctx{details::evp_md_ctx_ptr{EVP_MD_CTX_new()}};
         if(!ctx) [[unlikely]] { return {false, u8"OpenSSL failed to allocate EVP_MD_CTX."}; }
 
+        auto const key_status{details::validate_signature_key(key)};
+        if(!key_status.ok) [[unlikely]] { return key_status; }
+
+        EVP_PKEY_CTX* pkey_ctx{};
         auto const md{details::md_for_key(key)};
-        if(EVP_DigestSignInit(ctx.get(), nullptr, md, nullptr, key) <= 0) [[unlikely]]
+        if(EVP_DigestSignInit(ctx.get(), ::std::addressof(pkey_ctx), md, nullptr, key) <= 0) [[unlikely]]
         {
             return {false, u8"OpenSSL EVP_DigestSignInit failed."};
         }
+        auto const config_status{details::configure_signature_context(pkey_ctx, key)};
+        if(!config_status.ok) [[unlikely]] { return config_status; }
 
         ::std::size_t sig_len{};
         if(EVP_DigestSign(ctx.get(), nullptr, ::std::addressof(sig_len), reinterpret_cast<unsigned char const*>(first), size) <= 0) [[unlikely]]
@@ -325,11 +482,17 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::crypto
         auto ctx{details::evp_md_ctx_ptr{EVP_MD_CTX_new()}};
         if(!ctx) [[unlikely]] { return {false, u8"OpenSSL failed to allocate EVP_MD_CTX."}; }
 
+        auto const key_status{details::validate_signature_key(key)};
+        if(!key_status.ok) [[unlikely]] { return key_status; }
+
+        EVP_PKEY_CTX* pkey_ctx{};
         auto const md{details::md_for_key(key)};
-        if(EVP_DigestVerifyInit(ctx.get(), nullptr, md, nullptr, key) <= 0) [[unlikely]]
+        if(EVP_DigestVerifyInit(ctx.get(), ::std::addressof(pkey_ctx), md, nullptr, key) <= 0) [[unlikely]]
         {
             return {false, u8"OpenSSL EVP_DigestVerifyInit failed."};
         }
+        auto const config_status{details::configure_signature_context(pkey_ctx, key)};
+        if(!config_status.ok) [[unlikely]] { return config_status; }
 
         auto const res{EVP_DigestVerify(ctx.get(),
                                         reinterpret_cast<unsigned char const*>(sig_first),
@@ -353,6 +516,31 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::crypto
         if(!key) [[unlikely]] { return {false, u8"failed to read PEM private key."}; }
 
         algorithm = details::key_algorithm_name(key.get());
+        if(algorithm == nullptr) [[unlikely]] { return {false, u8"unsupported OpenSSL signing key type."}; }
+        return sign(key.get(), data_first, data_size, signature);
+    }
+
+    inline openssl_status sign_with_private_key_and_certificate(::std::byte const* private_key_first,
+                                                                ::std::size_t private_key_size,
+                                                                ::std::byte const* certificate_first,
+                                                                ::std::size_t certificate_size,
+                                                                ::std::byte const* data_first,
+                                                                ::std::size_t data_size,
+                                                                byte_vector& signature,
+                                                                char8_t const*& algorithm) noexcept
+    {
+        auto key{details::read_private_key(private_key_first, private_key_size)};
+        if(!key) [[unlikely]] { return {false, u8"failed to read PEM private key."}; }
+
+        auto cert_key{details::public_key_from_certificate(certificate_first, certificate_size)};
+        if(!cert_key) [[unlikely]] { return {false, u8"failed to read PEM certificate public key."}; }
+        if(!details::same_public_key(key.get(), cert_key.get())) [[unlikely]]
+        {
+            return {false, u8"private key does not match the signing certificate."};
+        }
+
+        algorithm = details::key_algorithm_name(key.get());
+        if(algorithm == nullptr) [[unlikely]] { return {false, u8"unsupported OpenSSL signing key type."}; }
         return sign(key.get(), data_first, data_size, signature);
     }
 
@@ -373,12 +561,109 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::crypto
             return {false, u8"OpenSSL failed to export PEM public key."};
         }
 
-        BUF_MEM* mem{};
-        BIO_get_mem_ptr(bio.get(), ::std::addressof(mem));
-        if(mem == nullptr || mem->length == 0uz) [[unlikely]] { return {false, u8"OpenSSL exported an empty public key."}; }
+        if(!details::copy_mem_bio(bio.get(), public_key_pem)) [[unlikely]] { return {false, u8"OpenSSL exported an empty public key."}; }
+        return {true, {}};
+    }
 
-        public_key_pem.resize(mem->length);
-        ::std::memcpy(public_key_pem.data(), mem->data, mem->length);
+    inline openssl_status export_public_key_der_from_private_key_pem(::std::byte const* private_key_first,
+                                                                     ::std::size_t private_key_size,
+                                                                     byte_vector& public_key_der) noexcept
+    {
+        auto key{details::read_private_key(private_key_first, private_key_size)};
+        if(!key) [[unlikely]] { return {false, u8"failed to read PEM private key."}; }
+
+        return details::pkey_to_der(key.get(), public_key_der);
+    }
+
+    inline openssl_status public_key_pem_to_der(::std::byte const* public_key_first, ::std::size_t public_key_size, byte_vector& public_key_der) noexcept
+    {
+        auto key{details::read_public_key(public_key_first, public_key_size)};
+        if(!key) [[unlikely]] { return {false, u8"failed to read PEM public key."}; }
+
+        return details::pkey_to_der(key.get(), public_key_der);
+    }
+
+    inline openssl_status public_key_der_to_pem(::std::byte const* public_key_first, ::std::size_t public_key_size, byte_vector& public_key_pem) noexcept
+    {
+        public_key_pem = {};
+
+        auto key{details::read_public_key_der(public_key_first, public_key_size)};
+        if(!key) [[unlikely]] { return {false, u8"failed to read DER public key."}; }
+
+        auto bio{details::bio_ptr{BIO_new(BIO_s_mem())}};
+        if(!bio) [[unlikely]] { return {false, u8"OpenSSL failed to allocate BIO."}; }
+
+        if(PEM_write_bio_PUBKEY(bio.get(), key.get()) != 1) [[unlikely]]
+        {
+            return {false, u8"OpenSSL failed to export PEM public key."};
+        }
+
+        if(!details::copy_mem_bio(bio.get(), public_key_pem)) [[unlikely]] { return {false, u8"OpenSSL exported an empty public key."}; }
+        return {true, {}};
+    }
+
+    inline openssl_status certificate_pem_to_der(::std::byte const* certificate_first,
+                                                 ::std::size_t certificate_size,
+                                                 byte_vector& certificate_der) noexcept
+    {
+        auto cert{details::read_certificate(certificate_first, certificate_size)};
+        if(!cert) [[unlikely]] { return {false, u8"failed to read PEM certificate."}; }
+
+        return details::x509_to_der(cert.get(), certificate_der);
+    }
+
+    inline openssl_status certificate_der_to_pem(::std::byte const* certificate_first,
+                                                 ::std::size_t certificate_size,
+                                                 byte_vector& certificate_pem) noexcept
+    {
+        certificate_pem = {};
+
+        auto cert{details::read_certificate_der(certificate_first, certificate_size)};
+        if(!cert) [[unlikely]] { return {false, u8"failed to read DER certificate."}; }
+
+        auto bio{details::bio_ptr{BIO_new(BIO_s_mem())}};
+        if(!bio) [[unlikely]] { return {false, u8"OpenSSL failed to allocate BIO."}; }
+
+        if(PEM_write_bio_X509(bio.get(), cert.get()) != 1) [[unlikely]]
+        {
+            return {false, u8"OpenSSL failed to export PEM certificate."};
+        }
+
+        if(!details::copy_mem_bio(bio.get(), certificate_pem)) [[unlikely]] { return {false, u8"OpenSSL exported an empty certificate."}; }
+        return {true, {}};
+    }
+
+    inline openssl_status certificates_pem_to_der_list(::std::byte const* certificate_chain_first,
+                                                       ::std::size_t certificate_chain_size,
+                                                       ::uwsign::utils::container::vector<byte_vector>& certificates_der) noexcept
+    {
+        certificates_der = {};
+
+        auto chain{details::read_certificate_chain(certificate_chain_first, certificate_chain_size)};
+        if(!chain) [[unlikely]] { return {false, u8"failed to read PEM certificate chain."}; }
+
+        auto const cert_count{sk_X509_num(chain.get())};
+        certificates_der.reserve(static_cast<::std::size_t>(cert_count));
+        for(int i{}; i != cert_count; ++i)
+        {
+            auto cert{sk_X509_value(chain.get(), i)};
+            if(cert == nullptr) [[unlikely]]
+            {
+                certificates_der = {};
+                return {false, u8"certificate chain contains a null certificate."};
+            }
+
+            byte_vector der{};
+            auto status{details::x509_to_der(cert, der)};
+            if(!status.ok) [[unlikely]]
+            {
+                certificates_der = {};
+                return status;
+            }
+
+            certificates_der.emplace_back(::std::move(der));
+        }
+
         return {true, {}};
     }
 

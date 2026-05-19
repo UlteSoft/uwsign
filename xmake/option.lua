@@ -21,14 +21,16 @@ option("sysroot", function()
         "The option is automatically added if using our toolchain option.",
         [[    none: Don't set the "--sysroot" option, use the default sysroot of the toolchain.]],
         [[    detect: Detect and set the sysroot for clang, use the default sysroot for gcc.]],
-        [[    path: Set the "--sysroot" option as "--sysroot=path". Note that "path" is an absolute path or a relative path other than "no" and "detect".]]
+        [[    path: Set the "--sysroot" option as "--sysroot=path". Note that "path" is an absolute path or a relative path other than "none", "no" and "detect".]]
     )
     set_default("detect")
     after_check(function(option)
         import("utility.utility")
         local sysroot_option = utility.get_sysroot_option()
-        for flag, opt in pairs(sysroot_option) do
-            option:add(flag, opt)
+        if sysroot_option then
+            for flag, opt in pairs(sysroot_option) do
+                option:add(flag, opt)
+            end
         end
     end)
 end)

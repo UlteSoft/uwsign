@@ -197,19 +197,7 @@ function def_build(opt)
 	)
 end
 
-target("uwsign")
-	set_kind("binary")
-	def_build()
-
-	-- uwsign uses precise floating-point model to ensure determinism.
-	set_fpmodels("precise") 
-
-	local is_debug_mode = is_mode("debug")  -- public all modules in debug mode
-	local enable_cxx_module = get_config("use-cxx-module")
-
-	-- third-parties/fast_io
-	add_includedirs("third-parties/fast_io/include")
-
+function add_uwsign_openssl()
 	if not is_plat("wasm-wasi", "wasm-wasip1", "wasm-wasip2", "wasm-wasip3", "wasm-wasi-threads", "wasm-wasip1-threads", "wasm-wasip2-threads", "wasm-wasip3-threads", "wasm-emscripten", "none") then
 		for _, openssl_prefix in ipairs({"/opt/homebrew/opt/openssl@3", "/usr/local/opt/openssl@3"}) do
 			local openssl_include = path.join(openssl_prefix, "include")
@@ -223,6 +211,22 @@ target("uwsign")
 		end
 		add_links("ssl", "crypto")
 	end
+end
+
+target("uwsign")
+	set_kind("binary")
+	def_build()
+
+	-- uwsign uses precise floating-point model to ensure determinism.
+	set_fpmodels("precise") 
+
+	local is_debug_mode = is_mode("debug")  -- public all modules in debug mode
+	local enable_cxx_module = get_config("use-cxx-module")
+
+	-- third-parties/fast_io
+	add_includedirs("third-parties/fast_io/include")
+
+	add_uwsign_openssl()
 
 	if enable_cxx_module then
 		add_files("third-parties/fast_io/share/fast_io/fast_io.cppm", { public = is_debug_mode })
@@ -248,11 +252,60 @@ target("uwsign")
 
 target_end()
 
-target("uwsign_wasm_signature_section_test")
-	set_kind("binary")
-	def_build({skip_static_libcxx = true})
+-- test unit
+for _, file in ipairs(os.files("test/**.cc")) do
+	local normalized = file:gsub("\\", "/")
+	local name = path.basename(file)
+	target(name)
+		local group = path.directory(file):gsub("\\", "/")
+		set_group(group)
+		set_kind("binary")
+		def_build({ skip_static_libcxx = true })
 
-	add_includedirs("third-parties/fast_io/include")
-	add_includedirs("src/")
-	add_files("test/wasm_signature_section_test.cc")
-target_end()
+		-- uwsign uses precise floating-point model to ensure determinism.
+		set_fpmodels("precise")
+
+		set_default(false)
+
+		local is_debug_mode = is_mode("debug")
+		local enable_cxx_module = get_config("use-cxx-module")
+
+		-- third-parties/fast_io
+		add_includedirs("third-parties/fast_io/include")
+
+		add_uwsign_openssl()
+
+		if enable_cxx_module then
+			add_files("third-parties/fast_io/share/fast_io/fast_io.cppm", { public = is_debug_mode })
+			add_files("third-parties/fast_io/share/fast_io/fast_io_crypto.cppm", { public = is_debug_mode })
+		end
+
+		-- uwsign
+		add_defines("UWSIGN")
+		-- uwsign test
+		add_defines("UWSIGN_TEST=1")
+
+		-- src
+		add_includedirs("src/")
+
+		if enable_cxx_module then
+			add_files("src/uwsign/**.cppm", { public = is_debug_mode })
+		end
+
+		set_warnings("all", "extra", "error")
+
+		if get_config("use-llvm-compiler") then
+			-- Test targets include CLI glue headers that can trigger
+			-- `-Wundefined-inline` under LLVM. Keep src/* strict and only
+			-- downgrade this diagnostic for tests.
+			add_cxxflags("-Wno-error=undefined-inline")
+		end
+
+		if normalized:find("test/0003.cli/", 1, true) then
+			add_deps("uwsign")
+		end
+
+		add_tests("unit", { group = "default" }) -- xmake test -g default
+		add_files(file)
+	target_end()
+end

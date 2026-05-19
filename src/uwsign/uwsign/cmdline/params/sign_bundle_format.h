@@ -44,8 +44,8 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::cmdline::params
 #endif
     inline constexpr ::uwsign::utils::cmdline::parameter sign_bundle_format{
         .name{u8"--bundle-format"},
-        .describe{u8"Set bundle format: uwsign or cosign."},
-        .usage{u8"<uwsign|cosign>"},
+        .describe{u8"Set bundle format: uwsign, cosign, or cosign-v0.3."},
+        .usage{u8"<uwsign|cosign|cosign-v0.3>"},
         .handle{::std::addressof(details::required_value_callback)},
         .pretreatment{::std::addressof(details::required_value_pretreatment)},
         .is_exist{::std::addressof(details::sign_bundle_format_is_exist)},

@@ -18,7 +18,9 @@ module;
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
+#include <utility>
 // macro
 #include <uwsign/utils/macro/push_macros.h>
 // platform
@@ -26,7 +28,9 @@ module;
 #include <openssl/buffer.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
+#include <openssl/opensslv.h>
 #include <openssl/pem.h>
+#include <openssl/rsa.h>
 #include <openssl/sha.h>
 #include <openssl/x509.h>
 #include <openssl/x509_vfy.h>

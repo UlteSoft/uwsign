@@ -62,6 +62,7 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::sign
         bool replace_signature_sections{};
         bool base64_output{};
         bool cosign_legacy_bundle_format{};
+        bool sigstore_bundle_format{};
         u8cstring_view input{};
         u8cstring_view output{};
         u8cstring_view wasm_output{};
@@ -303,14 +304,22 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::sign
                 if(options.bundle_format == u8"uwsign")
                 {
                     options.cosign_legacy_bundle_format = false;
+                    options.sigstore_bundle_format = false;
                 }
                 else if(options.bundle_format == u8"cosign" || options.bundle_format == u8"cosign-legacy")
                 {
                     options.cosign_legacy_bundle_format = true;
+                    options.sigstore_bundle_format = false;
+                }
+                else if(options.bundle_format == u8"sigstore" || options.bundle_format == u8"cosign-v0.3" ||
+                        options.bundle_format == u8"cosign-new")
+                {
+                    options.cosign_legacy_bundle_format = false;
+                    options.sigstore_bundle_format = true;
                 }
                 else
                 {
-                    error = u8"--bundle-format must be 'uwsign' or 'cosign'.";
+                    error = u8"--bundle-format must be 'uwsign', 'cosign', or 'cosign-v0.3'.";
                     return false;
                 }
             }
@@ -362,9 +371,15 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::sign
                     return false;
                 }
 
-                if(!options.certificate_chain.empty() && options.certificate.empty()) [[unlikely]]
+                if(options.signature.empty() && options.key.empty() && options.certificate.empty() && options.certificate_chain.empty()) [[unlikely]]
                 {
-                    error = u8"--certificate-chain requires --certificate unless the bundle embeds the signing certificate.";
+                    error = u8"--verify requires --key, --certificate, or --certificate-chain; embedded certificates are not trusted by themselves.";
+                    return false;
+                }
+
+                if(!options.certificate_chain.empty() && options.certificate.empty() && !options.signature.empty()) [[unlikely]]
+                {
+                    error = u8"--certificate-chain requires --certificate for detached signature verification.";
                     return false;
                 }
             }
@@ -555,6 +570,36 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::sign
             if(!src.empty()) { ::uwsign::uwsign::wasm::details::append_bytes(dst, src.data(), src.data() + src.size()); }
         }
 
+        inline void make_certificate_chain_with_embedded_intermediates(byte_vector& out,
+                                                                       ::uwsign::uwsign::wasm::byte_view embedded_intermediates,
+                                                                       byte_vector const& trusted_chain)
+        {
+            out = {};
+            out.reserve(embedded_intermediates.size() + trusted_chain.size());
+            if(!embedded_intermediates.empty())
+            {
+                ::uwsign::uwsign::wasm::details::append_bytes(out, embedded_intermediates.first, embedded_intermediates.last);
+            }
+            if(!trusted_chain.empty())
+            {
+                ::uwsign::uwsign::wasm::details::append_bytes(out, trusted_chain.data(), trusted_chain.data() + trusted_chain.size());
+            }
+        }
+
+        inline void make_certificate_chain_with_embedded_intermediates(byte_vector& out, byte_vector const& embedded_intermediates, byte_vector const& trusted_chain)
+        {
+            out = {};
+            out.reserve(embedded_intermediates.size() + trusted_chain.size());
+            if(!embedded_intermediates.empty())
+            {
+                ::uwsign::uwsign::wasm::details::append_bytes(out, embedded_intermediates.data(), embedded_intermediates.data() + embedded_intermediates.size());
+            }
+            if(!trusted_chain.empty())
+            {
+                ::uwsign::uwsign::wasm::details::append_bytes(out, trusted_chain.data(), trusted_chain.data() + trusted_chain.size());
+            }
+        }
+
         [[nodiscard]] inline constexpr bool is_json_space(::std::byte c) noexcept
         {
             auto const ch{static_cast<unsigned char>(c)};
@@ -707,6 +752,27 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::sign
             append_u8_z(out, u8"\"");
         }
 
+        inline void append_json_base64_value(byte_vector& out, byte_vector const& raw)
+        {
+            byte_vector b64{};
+            base64_encode(raw, b64);
+            append_u8_z(out, u8"\"");
+            if(!b64.empty()) { ::uwsign::uwsign::wasm::details::append_bytes(out, b64.data(), b64.data() + b64.size()); }
+            append_u8_z(out, u8"\"");
+        }
+
+        inline void append_json_base64_c_array(byte_vector& out, char8_t const* key, ::std::byte const* raw, ::std::size_t raw_size)
+        {
+            byte_vector bytes{};
+            bytes.reserve(raw_size);
+            if(raw_size != 0uz) { ::uwsign::uwsign::wasm::details::append_bytes(bytes, raw, raw + raw_size); }
+
+            append_u8_z(out, u8"\"");
+            append_u8_z(out, key);
+            append_u8_z(out, u8"\":");
+            append_json_base64_value(out, bytes);
+        }
+
         inline void make_cosign_legacy_bundle(byte_vector const& signature, byte_vector const& certificate, byte_vector& out)
         {
             out = {};
@@ -719,6 +785,99 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::sign
                 append_json_escaped_base64_field(out, u8"cert", certificate);
             }
             append_u8_z(out, u8"}");
+        }
+
+        inline bool make_sigstore_bundle(byte_vector const& signature,
+                                         ::std::byte const* digest,
+                                         ::std::size_t digest_size,
+                                         byte_vector const& private_key,
+                                         byte_vector const& certificate,
+                                         byte_vector const& certificate_chain,
+                                         byte_vector& out,
+                                         u8string_view& error) noexcept
+        {
+            out = {};
+            if(digest_size != 32uz) [[unlikely]]
+            {
+                error = u8"Sigstore bundle requires a SHA-256 message digest.";
+                return false;
+            }
+
+            byte_vector raw_certificate{};
+            ::uwsign::utils::container::vector<byte_vector> raw_chain{};
+            byte_vector raw_public_key{};
+            if(!certificate.empty())
+            {
+                auto status{::uwsign::uwsign::crypto::certificate_pem_to_der(certificate.data(), certificate.size(), raw_certificate)};
+                if(!status.ok) [[unlikely]]
+                {
+                    error = status.message;
+                    return false;
+                }
+
+                if(!certificate_chain.empty())
+                {
+                    status = ::uwsign::uwsign::crypto::certificates_pem_to_der_list(certificate_chain.data(), certificate_chain.size(), raw_chain);
+                    if(!status.ok) [[unlikely]]
+                    {
+                        error = status.message;
+                        return false;
+                    }
+                }
+            }
+            else
+            {
+                auto status{::uwsign::uwsign::crypto::export_public_key_der_from_private_key_pem(private_key.data(), private_key.size(), raw_public_key)};
+                if(!status.ok) [[unlikely]]
+                {
+                    error = status.message;
+                    return false;
+                }
+            }
+
+            out.reserve(signature.size() + raw_certificate.size() + raw_public_key.size() + certificate_chain.size() + 512uz);
+            append_u8_z(out, u8"{\"mediaType\":\"application/vnd.dev.sigstore.bundle.v0.3+json\",\"verificationMaterial\":{");
+            if(!raw_certificate.empty() || !raw_chain.empty())
+            {
+                append_u8_z(out, u8"\"x509CertificateChain\":{\"certificates\":[");
+                append_u8_z(out, u8"{\"rawBytes\":");
+                append_json_base64_value(out, raw_certificate);
+                append_u8_z(out, u8"}");
+                for(auto const& cert_der: raw_chain)
+                {
+                    append_u8_z(out, u8",{\"rawBytes\":");
+                    append_json_base64_value(out, cert_der);
+                    append_u8_z(out, u8"}");
+                }
+                append_u8_z(out, u8"]}");
+            }
+            else
+            {
+                ::std::byte public_key_digest[32uz]{};
+                auto status{::uwsign::uwsign::crypto::sha256(raw_public_key.data(), raw_public_key.size(), public_key_digest)};
+                if(!status.ok) [[unlikely]]
+                {
+                    error = status.message;
+                    return false;
+                }
+
+                byte_vector digest_bytes{};
+                digest_bytes.reserve(sizeof(public_key_digest));
+                ::uwsign::uwsign::wasm::details::append_bytes(digest_bytes, public_key_digest, public_key_digest + sizeof(public_key_digest));
+
+                byte_vector hint{};
+                base64_encode(digest_bytes, hint);
+                append_u8_z(out, u8"\"publicKey\":{\"hint\":\"");
+                if(!hint.empty()) { ::uwsign::uwsign::wasm::details::append_bytes(out, hint.data(), hint.data() + hint.size()); }
+                append_u8_z(out, u8"\"}");
+            }
+
+            append_u8_z(out, u8"},\"messageSignature\":{\"messageDigest\":{\"algorithm\":\"SHA2_256\",");
+            append_json_base64_c_array(out, u8"digest", digest, digest_size);
+            append_u8_z(out, u8"},");
+            append_json_escaped_base64_field(out, u8"signature", signature);
+            append_u8_z(out, u8"}}");
+            return true;
         }
 
         inline bool append_pem_certificate_from_raw_base64(byte_vector& out, byte_vector const& raw_base64) noexcept
@@ -908,12 +1067,27 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::sign
 
                 byte_vector signature{};
                 char8_t const* algorithm{};
-                auto const sign_status{::uwsign::uwsign::crypto::sign_with_private_key(private_key.data(),
-                                                                                       private_key.size(),
-                                                                                       stripped.stripped_module.data(),
-                                                                                       stripped.stripped_module.size(),
-                                                                                       signature,
-                                                                                       algorithm)};
+                ::uwsign::uwsign::crypto::openssl_status sign_status{};
+                if(certificate.empty())
+                {
+                    sign_status = ::uwsign::uwsign::crypto::sign_with_private_key(private_key.data(),
+                                                                                  private_key.size(),
+                                                                                  stripped.stripped_module.data(),
+                                                                                  stripped.stripped_module.size(),
+                                                                                  signature,
+                                                                                  algorithm);
+                }
+                else
+                {
+                    sign_status = ::uwsign::uwsign::crypto::sign_with_private_key_and_certificate(private_key.data(),
+                                                                                                  private_key.size(),
+                                                                                                  certificate.data(),
+                                                                                                  certificate.size(),
+                                                                                                  stripped.stripped_module.data(),
+                                                                                                  stripped.stripped_module.size(),
+                                                                                                  signature,
+                                                                                                  algorithm);
+                }
                 if(!sign_status.ok) [[unlikely]]
                 {
                     print_error(stm, sign_status.message);
@@ -1005,7 +1179,22 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::sign
                 }
 
                 byte_vector output_payload{};
-                if(options.cosign_legacy_bundle_format)
+                if(options.sigstore_bundle_format)
+                {
+                    if(!make_sigstore_bundle(signature,
+                                             digest,
+                                             sizeof(digest),
+                                             private_key,
+                                             certificate,
+                                             certificate_chain,
+                                             output_payload,
+                                             error)) [[unlikely]]
+                    {
+                        print_error(stm, error);
+                        return false;
+                    }
+                }
+                else if(options.cosign_legacy_bundle_format)
                 {
                     make_cosign_legacy_bundle(signature, certificate.empty() ? verification_material : certificate, output_payload);
                 }
@@ -1127,12 +1316,14 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::sign
             }
             else if(!decoded.certificate.empty())
             {
-                if(!decoded.certificate_chain.empty())
+                if(!certificate_chain.empty())
                 {
+                    byte_vector chain{};
+                    make_certificate_chain_with_embedded_intermediates(chain, decoded.certificate_chain, certificate_chain);
                     status = ::uwsign::uwsign::crypto::verify_with_certificate_chain_pem(decoded.certificate.first,
                                                                                          decoded.certificate.size(),
-                                                                                         decoded.certificate_chain.first,
-                                                                                         decoded.certificate_chain.size(),
+                                                                                         chain.data(),
+                                                                                         chain.size(),
                                                                                          stripped_module.data(),
                                                                                          stripped_module.size(),
                                                                                          decoded.signature.first,
@@ -1141,18 +1332,12 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::sign
                 }
                 else
                 {
-                    status = ::uwsign::uwsign::crypto::verify_with_certificate_pem(decoded.certificate.first,
-                                                                                   decoded.certificate.size(),
-                                                                                   stripped_module.data(),
-                                                                                   stripped_module.size(),
-                                                                                   decoded.signature.first,
-                                                                                   decoded.signature.size(),
-                                                                                   valid);
+                    return false;
                 }
             }
             else
             {
-                print_error(stm, u8"no public key, certificate, or embedded certificate is available for verification.");
+                print_error(stm, u8"no trusted public key, certificate, or certificate chain is available for verification.");
                 return false;
             }
 
@@ -1262,13 +1447,11 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::sign
 
             if(!certificate.empty())
             {
-                return verify_detached_signature(stripped_module,
-                                                 decoded.signature,
-                                                 public_key,
-                                                 certificate,
-                                                 !certificate_chain.empty() ? certificate_chain : decoded.certificate_chain,
-                                                 stm,
-                                                 false);
+                if(verify_detached_signature(stripped_module, decoded.signature, public_key, certificate, certificate_chain, stm, false))
+                {
+                    return true;
+                }
+                return false;
             }
 
             if(!public_key.empty())
@@ -1276,20 +1459,11 @@ UWSIGN_MODULE_EXPORT namespace uwsign::uwsign::sign
                 return verify_detached_signature(stripped_module, decoded.signature, public_key, certificate, certificate_chain, stm, false);
             }
 
-            if(decoded.certificate.empty()) { return false; }
+            if(decoded.certificate.empty() || certificate_chain.empty()) { return false; }
 
-            if(verify_detached_signature(stripped_module, decoded.signature, public_key, decoded.certificate, decoded.certificate_chain, stm, false))
-            {
-                return true;
-            }
-
-            return verify_detached_signature(stripped_module,
-                                             decoded.signature,
-                                             decoded.certificate,
-                                             byte_vector{},
-                                             byte_vector{},
-                                             stm,
-                                             false);
+            byte_vector chain{};
+            make_certificate_chain_with_embedded_intermediates(chain, decoded.certificate_chain, certificate_chain);
+            return verify_detached_signature(stripped_module, decoded.signature, public_key, decoded.certificate, chain, stm, false);
         }
 
         inline bool verify_command(command_options const& options, auto&& stm) noexcept
